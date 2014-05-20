@@ -1,4 +1,4 @@
-package myServlet;
+package net.atos.ocsp;
 
 import java.io.IOException;
 

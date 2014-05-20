@@ -1,4 +1,4 @@
-package myServlet;
+package net.atos.ocsp;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -47,14 +47,14 @@ import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class MyServlet extends MyAbstractServlet {
+public class ResponderServlet extends MyAbstractServlet {
 
 	private static final long serialVersionUID = 1L;
 
 	private final static ASN1ObjectIdentifier ID_SHA1 = new ASN1ObjectIdentifier("1.3.14.3.2.26");
 	private final static ASN1ObjectIdentifier ID_NONCE = new ASN1ObjectIdentifier("1.3.6.1.5.5.7.48.1.2");
 
-	private final static Logger logger = LoggerFactory.getLogger(MyServlet.class);
+	private final static Logger logger = LoggerFactory.getLogger(ResponderServlet.class);
 	
 	@Override
 	protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
