@@ -1,23 +1,8 @@
 package net.atos.ocsp.servlet;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.RandomAccessFile;
 import java.math.BigInteger;
-import java.security.KeyFactory;
-import java.security.KeyStoreException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.security.PrivateKey;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -33,17 +18,14 @@ import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ocsp.ResponderID;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.Extensions;
-import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.ocsp.BasicOCSPResp;
 import org.bouncycastle.cert.ocsp.BasicOCSPRespBuilder;
 import org.bouncycastle.cert.ocsp.CertificateStatus;
 import org.bouncycastle.cert.ocsp.OCSPException;
 import org.bouncycastle.cert.ocsp.OCSPReq;
+import org.bouncycastle.cert.ocsp.OCSPResp;
 import org.bouncycastle.cert.ocsp.OCSPRespBuilder;
 import org.bouncycastle.cert.ocsp.RespID;
-import org.bouncycastle.operator.ContentSigner;
-import org.bouncycastle.operator.OperatorCreationException;
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,11 +42,8 @@ public class ResponderServlet extends MyAbstractServlet {
 
 	@Override
 	protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-		int response = OCSPRespBuilder.INTERNAL_ERROR; // by default response as
-														// ERROR
 		List<RequestData> requestDataList = new ArrayList<>();
 		int versionProtocol;
-		
 		logger.info("Reception d'une requete HTTP Post");
 		logger.debug("Verification du type de requete : requete OCSP ?");
 		checkContentType(req);
@@ -72,14 +51,29 @@ public class ResponderServlet extends MyAbstractServlet {
 		versionProtocol = ocspreq.getVersionNumber();
 		logger.debug("Version : {}", versionProtocol);
 		logger.debug("RequestExtensions :");
-		ASN1OctetString nonceValue = getExtensionValue(ID_NONCE, ocspreq);
+		getExtensionValue(ID_NONCE, ocspreq);
 		logger.debug("RequestList :");
 		setRequestData(req, requestDataList, ocspreq);
 		OCSPCertificate ocspCertificate = OCSPCertificateFactory.getOCSPCertificate();
+		OCSPResp ocspresp = getSignedOcspResponse(ocspreq, ocspCertificate);
+		setOcspResponse(resp, ocspresp);
+	}
+
+
+	private void setOcspResponse(HttpServletResponse resp, OCSPResp ocspresp) throws IOException {
+		byte[] respBytes = ocspresp.getEncoded();
+		resp.setContentType("application/ocsp-response");
+		resp.setContentLength(respBytes.length);
+		resp.getOutputStream().write(respBytes);
+	}
+
+
+	private OCSPResp getSignedOcspResponse(OCSPReq ocspreq, OCSPCertificate ocspCertificate) {
+		int responseCode = OCSPRespBuilder.INTERNAL_ERROR;
 		ResponderID respondID = new ResponderID(ocspCertificate.getCertificateChain()[0].getSubject());
 		RespID respID = new RespID(respondID);
 		BasicOCSPRespBuilder bOCSPbuilder = new BasicOCSPRespBuilder(respID);
-		Date dateRevoke = new Date();
+		// Date dateRevoke = new Date();
 		// bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new
 		// org.bouncycastle.cert.ocsp.UnknownStatus());
 		bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), CertificateStatus.GOOD);
@@ -87,20 +81,18 @@ public class ResponderServlet extends MyAbstractServlet {
 		// RevokedStatus(dateRevoke,2));
 		Extension ext = ocspreq.getExtension(ID_NONCE);
 		bOCSPbuilder.setResponseExtensions(new Extensions(new Extension[] { ext }));
-		org.bouncycastle.cert.ocsp.BasicOCSPResp respo = null;
+		BasicOCSPResp basicResponse = null;
 		Date myDate = new Date(1000000);
-		org.bouncycastle.cert.ocsp.OCSPResp ocspresp = null;
+		OCSPResp ocspResp = null;
 		try {
-			respo = bOCSPbuilder.build(ocspCertificate.getSigner(), ocspCertificate.getCertificateChain(), myDate);
-			response = OCSPRespBuilder.SUCCESSFUL;
-			ocspresp = new OCSPRespBuilder().build(response, respo);
+			// Signature
+			basicResponse = bOCSPbuilder.build(ocspCertificate.getSigner(), ocspCertificate.getCertificateChain(), myDate);
+			responseCode = OCSPRespBuilder.SUCCESSFUL;
+			ocspResp = new OCSPRespBuilder().build(responseCode, basicResponse);
 		} catch (OCSPException e) {
 			logger.error(e.getMessage(), e);
 		}
-		byte[] respBytes = ocspresp.getEncoded();
-		resp.setContentType("application/ocsp-response");
-		resp.setContentLength(respBytes.length);
-		resp.getOutputStream().write(respBytes);
+		return ocspResp;
 	}
 
 
@@ -112,10 +104,9 @@ public class ResponderServlet extends MyAbstractServlet {
 			ASN1ObjectIdentifier extensionTmp = extensionsList.get(i);
 			if (extensionTmp.equals(extensionId)) {
 				ocspExtensionValue = ocspreq.getExtension(extensionTmp).getExtnValue();
-				logger.debug("{} : {}",extensionId, ocspExtensionValue);
-				return ocspExtensionValue ;
+				logger.debug("{} : {}", extensionId, ocspExtensionValue);
+				return ocspExtensionValue;
 			}
-			
 		}
 		return null;
 	}
@@ -131,9 +122,6 @@ public class ResponderServlet extends MyAbstractServlet {
 		OCSPReq ocspreq = new OCSPReq(reqBytes);
 		return ocspreq;
 	}
-
-
-	
 
 
 	private byte[] checkByteArray(ByteArrayOutputStream baos) {
@@ -193,7 +181,4 @@ public class ResponderServlet extends MyAbstractServlet {
 		}
 		return result;
 	}
-
-
-	
 }
