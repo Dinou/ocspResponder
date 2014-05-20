@@ -10,7 +10,7 @@
 
     <servlet>
         <servlet-name>ResponderServlet</servlet-name>
-        <servlet-class>net.atos.ocsp.ResponderServlet</servlet-class>
+        <servlet-class>net.atos.ocsp.servlet.ResponderServlet</servlet-class>
     </servlet>
 
     <servlet-mapping>

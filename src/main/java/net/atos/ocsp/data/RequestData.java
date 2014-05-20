@@ -1,4 +1,4 @@
-package net.atos.ocsp;
+package net.atos.ocsp.data;
 
 import java.math.BigInteger;
 
