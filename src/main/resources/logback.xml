@@ -7,7 +7,7 @@
              </encoder>
        </appender>
 
-       <logger name="myServlet">
+       <logger name="net.atos.ocsp">
              <level value="debug" />
        </logger>
 

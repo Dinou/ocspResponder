@@ -3,7 +3,6 @@ package net.atos.ocsp;
 import java.math.BigInteger;
 
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
-import org.bouncycastle.asn1.ASN1OctetString;
 
 public class RequestData {
 	private ASN1ObjectIdentifier HashAlgorithmOID ;

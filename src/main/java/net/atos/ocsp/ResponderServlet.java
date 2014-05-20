@@ -18,14 +18,12 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
-import java.sql.Date;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
-
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
 import org.apache.commons.io.IOUtils;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1OctetString;
@@ -39,7 +37,6 @@ import org.bouncycastle.cert.ocsp.OCSPException;
 import org.bouncycastle.cert.ocsp.OCSPReq;
 import org.bouncycastle.cert.ocsp.OCSPRespBuilder;
 import org.bouncycastle.cert.ocsp.RespID;
-import org.bouncycastle.cert.ocsp.RevokedStatus;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
@@ -52,17 +49,20 @@ public class ResponderServlet extends MyAbstractServlet {
 	private static final long serialVersionUID = 1L;
 
 	private final static ASN1ObjectIdentifier ID_SHA1 = new ASN1ObjectIdentifier("1.3.14.3.2.26");
+
 	private final static ASN1ObjectIdentifier ID_NONCE = new ASN1ObjectIdentifier("1.3.6.1.5.5.7.48.1.2");
 
 	private final static Logger logger = LoggerFactory.getLogger(ResponderServlet.class);
-	
+
+
+	@SuppressWarnings("unchecked")
 	@Override
 	protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-		int response = OCSPRespBuilder.INTERNAL_ERROR; // by default response as ERROR
-		List<RequestData> requestDataList = new ArrayList<>() ;
-		int versionProtocol ;
-		ASN1OctetString OCSPNonceExtensionValue ;
-		
+		int response = OCSPRespBuilder.INTERNAL_ERROR; // by default response as
+														// ERROR
+		List<RequestData> requestDataList = new ArrayList<>();
+		int versionProtocol;
+		ASN1OctetString OCSPNonceExtensionValue;
 		logger.info("Reception d'une requete HTTP Post");
 		logger.debug("Verification du type de requete : requete OCSP ?");
 		checkContentType(req);
@@ -74,93 +74,71 @@ public class ResponderServlet extends MyAbstractServlet {
 		logger.debug("Recuperation des data de la requete");
 		OCSPReq ocspreq = new OCSPReq(reqBytes);
 		versionProtocol = ocspreq.getVersionNumber();
-		logger.debug("Version : {}",versionProtocol);
-		logger.debug("RequestExtensions :" );
-		java.util.List extensionsList = ocspreq.getExtensionOIDs();
+		logger.debug("Version : {}", versionProtocol);
+		logger.debug("RequestExtensions :");
+		List<ASN1ObjectIdentifier> extensionsList = ocspreq.getExtensionOIDs();
 		for (int i = 0; i < extensionsList.size(); i++) {
-			ASN1ObjectIdentifier extensionTmp = (ASN1ObjectIdentifier) extensionsList.get(i);
+			ASN1ObjectIdentifier extensionTmp = extensionsList.get(i);
 			if (extensionTmp.equals(ID_NONCE)) {
-				OCSPNonceExtensionValue =  ocspreq.getExtension(extensionTmp).getExtnValue();
+				OCSPNonceExtensionValue = ocspreq.getExtension(extensionTmp).getExtnValue();
 				logger.debug("NONCE : {}", OCSPNonceExtensionValue);
 			}
 		}
-		logger.debug("RequestList :" );
-		setRequestData(req,requestDataList, ocspreq);
-		
-		//Get responder's certificate (public key)
+		logger.debug("RequestList :");
+		setRequestData(req, requestDataList, ocspreq);
+		// Get responder's certificate (public key)
 		X509Certificate caOcsp;
-		X509Certificate caOcsp1;
-		X509CertificateHolder[] caOcspHolder = new X509CertificateHolder[1] ;
-		ContentSigner ocspSignKey = null ;
+		X509CertificateHolder[] caOcspHolder = new X509CertificateHolder[1];
+		ContentSigner ocspSignKey = null;
 		try {
-			caOcsp1 = readCertificate("D:\\apacheBuild\\caOcspBC.crt");
-			
-			//caOcsp = readCertificate("D:\\apacheBuild\\ocsp.crt");
-			//caOcsp = readCertificate("D:\\apacheBuild\\NORMAUX\\trusted.pem");
-			final byte[] encoded = caOcsp1.getEncoded();
+			caOcsp = readCertificate("D:\\apacheBuild\\caOcspBC.crt");
+			final byte[] encoded = caOcsp.getEncoded();
 			logger.debug(new String(Hex.encode(MessageDigest.getInstance("SHA1").digest(encoded))));
 			caOcspHolder[0] = new X509CertificateHolder(encoded);
-			//caOcspHolder[1] = new X509CertificateHolder(caOcsp.getEncoded());
 		} catch (Exception e) {
-			logger.debug(e.getMessage(),e);
+			logger.debug(e.getMessage(), e);
 		}
-		
-		//Get responder's private key 
+		// Get responder's private key
 		PrivateKey caOcspKey = readPrivateKey("D:\\apacheBuild\\caOcspBC.pk8");
-		//PrivateKey caOcspKey = readPrivateKey("D:\\apacheBuild\\ocsp.pk8");
-		
-		JcaContentSignerBuilder jca =  new JcaContentSignerBuilder("SHA1withRSA");
+		// PrivateKey caOcspKey = readPrivateKey("D:\\apacheBuild\\ocsp.pk8");
+		JcaContentSignerBuilder jca = new JcaContentSignerBuilder("SHA1withRSA");
 		try {
 			ocspSignKey = jca.build(caOcspKey);
 		} catch (OperatorCreationException e) {
-			logger.error(e.getMessage(),e);
+			logger.error(e.getMessage(), e);
 		}
-		
-		
-		ResponderID respondID  = new ResponderID(caOcspHolder[0].getSubject());
+		ResponderID respondID = new ResponderID(caOcspHolder[0].getSubject());
 		RespID respID = new RespID(respondID);
 		BasicOCSPRespBuilder bOCSPbuilder = new BasicOCSPRespBuilder(respID);
-		Date dateRevoke = new Date(2000000);
-		//bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new org.bouncycastle.cert.ocsp.UnknownStatus());
+		Date dateRevoke = new Date();
+		// bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new
+		// org.bouncycastle.cert.ocsp.UnknownStatus());
 		bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), CertificateStatus.GOOD);
-		//bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new RevokedStatus(dateRevoke,2));
+		// bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new
+		// RevokedStatus(dateRevoke,2));
 		Extension ext = ocspreq.getExtension(ID_NONCE);
-		bOCSPbuilder.setResponseExtensions(new Extensions(new Extension[]{ext}));
+		bOCSPbuilder.setResponseExtensions(new Extensions(new Extension[] { ext }));
 		org.bouncycastle.cert.ocsp.BasicOCSPResp respo = null;
-		
-	
 		Date myDate = new Date(1000000);
-		
-		org.bouncycastle.cert.ocsp.OCSPResp ocspresp = null ;
-	
-		
-		
+		org.bouncycastle.cert.ocsp.OCSPResp ocspresp = null;
 		try {
-			
-			
 			respo = bOCSPbuilder.build(ocspSignKey, caOcspHolder, myDate);
 			response = OCSPRespBuilder.SUCCESSFUL;
 			ocspresp = new OCSPRespBuilder().build(response, respo);
-			
-			
 		} catch (OCSPException e) {
-			logger.error(e.getMessage(),e);
+			logger.error(e.getMessage(), e);
 		}
-			
-			
 		byte[] respBytes = ocspresp.getEncoded();
 		resp.setContentType("application/ocsp-response");
 		resp.setContentLength(respBytes.length);
-	    resp.getOutputStream().write(respBytes);
-	
-		
-
+		resp.getOutputStream().write(respBytes);
 	}
 
+
 	private PrivateKey readPrivateKey(String path) throws FileNotFoundException, IOException {
-		PrivateKey privKey = null ;
+		PrivateKey privKey = null;
 		RandomAccessFile raf = new RandomAccessFile(path, "r");
-		byte[] buf = new byte[(int)raf.length()];
+		byte[] buf = new byte[(int) raf.length()];
 		raf.readFully(buf);
 		raf.close();
 		PKCS8EncodedKeySpec kspec = new PKCS8EncodedKeySpec(buf);
@@ -168,15 +146,16 @@ public class ResponderServlet extends MyAbstractServlet {
 		try {
 			kf = KeyFactory.getInstance("RSA");
 		} catch (NoSuchAlgorithmException e) {
-			logger.error(e.getMessage(),e);
+			logger.error(e.getMessage(), e);
 		}
 		try {
 			privKey = kf.generatePrivate(kspec);
 		} catch (InvalidKeySpecException e) {
-			logger.error(e.getMessage(),e);
+			logger.error(e.getMessage(), e);
 		}
-		return privKey ;
+		return privKey;
 	}
+
 
 	private byte[] checkByteArray(ByteArrayOutputStream baos) {
 		byte[] reqBytes = baos.toByteArray();
@@ -187,6 +166,7 @@ public class ResponderServlet extends MyAbstractServlet {
 		return reqBytes;
 	}
 
+
 	private void checkContentType(HttpServletRequest req) {
 		String contentType = req.getHeader("Content-Type");
 		if (!"application/ocsp-request".equalsIgnoreCase(contentType)) {
@@ -195,25 +175,21 @@ public class ResponderServlet extends MyAbstractServlet {
 		}
 	}
 
+
 	private void setRequestData(HttpServletRequest req, List<RequestData> reqData, OCSPReq ocspreq) throws IOException {
-	
-		
-		RequestData tmpReq ;
-		org.bouncycastle.cert.ocsp.Req[] requestList = ocspreq.getRequestList() ;
+		RequestData tmpReq;
+		org.bouncycastle.cert.ocsp.Req[] requestList = ocspreq.getRequestList();
 		if (requestList.length <= 0) {
 			logger.error("No OCSP requests found");
 		}
-		
-		for(int i = 0 ; i <requestList.length ; i++ ){
-		
+		for (int i = 0; i < requestList.length; i++) {
 			BigInteger certIDs = requestList[i].getCertID().getSerialNumber();
 			byte[] issuerNameHash = requestList[i].getCertID().getIssuerNameHash();
 			byte[] issuerKeyHash = requestList[i].getCertID().getIssuerKeyHash();
 			ASN1ObjectIdentifier algID = requestList[i].getCertID().getHashAlgOID();
-
 			logger.debug("OCSP Request DATA : ");
 			reqData.add(new RequestData());
-			tmpReq = reqData.get(i) ;
+			tmpReq = reqData.get(i);
 			if (algID.equals(ID_SHA1)) {
 				tmpReq.setHashAlgorithmOID(algID);
 				logger.debug("   Hash Algorithm : " + "sha1");
@@ -226,12 +202,10 @@ public class ResponderServlet extends MyAbstractServlet {
 			tmpReq.setIssuerKeyHash(issuerKeyHash);
 			logger.debug("   issuerKeyHash : {}", getHexString(issuerKeyHash));
 			tmpReq.setSerialNumber(certIDs);
-			logger.debug("   Serial Number : {}", certIDs.intValue());	
-			
+			logger.debug("   Serial Number : {}", certIDs.intValue());
 		}
-
-	
 	}
+
 
 	private String getHexString(byte[] b) {
 		String result = "";
@@ -240,30 +214,25 @@ public class ResponderServlet extends MyAbstractServlet {
 		}
 		return result;
 	}
-	private X509Certificate readCertificate(String keyFile) throws IOException, KeyStoreException, NoSuchProviderException, NoSuchAlgorithmException, CertificateException
-	{
-	 FileInputStream fis = null;
-	 ByteArrayInputStream bais = null;
-	 try 
-	 {
-	  // use FileInputStream to read the file
-	  fis = new FileInputStream(keyFile);
-	  
-	  // read the bytes
-	  byte value[] = new byte[fis.available()];
-	  fis.read(value);
-	  bais = new ByteArrayInputStream(value);
-	  
-	  // get X509 certificate factory
-	  CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-	   
-	  // certificate factory can now create the certificate 
-	  return (X509Certificate)certFactory.generateCertificate(bais);
-	 }
-	 finally 
-	 {
-	  IOUtils.closeQuietly(fis);
-	  IOUtils.closeQuietly(bais);
-	 }
+
+
+	private X509Certificate readCertificate(String keyFile) throws IOException, KeyStoreException, NoSuchProviderException, NoSuchAlgorithmException, CertificateException {
+		FileInputStream fis = null;
+		ByteArrayInputStream bais = null;
+		try {
+			// use FileInputStream to read the file
+			fis = new FileInputStream(keyFile);
+			// read the bytes
+			byte value[] = new byte[fis.available()];
+			fis.read(value);
+			bais = new ByteArrayInputStream(value);
+			// get X509 certificate factory
+			CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
+			// certificate factory can now create the certificate
+			return (X509Certificate) certFactory.generateCertificate(bais);
+		} finally {
+			IOUtils.closeQuietly(fis);
+			IOUtils.closeQuietly(bais);
+		}
 	}
 }
