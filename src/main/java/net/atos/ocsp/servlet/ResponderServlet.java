@@ -6,6 +6,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -26,6 +27,7 @@ import org.bouncycastle.cert.ocsp.OCSPReq;
 import org.bouncycastle.cert.ocsp.OCSPResp;
 import org.bouncycastle.cert.ocsp.OCSPRespBuilder;
 import org.bouncycastle.cert.ocsp.RespID;
+import org.bouncycastle.cert.ocsp.RevokedStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +57,9 @@ public class ResponderServlet extends MyAbstractServlet {
 		logger.debug("RequestList :");
 		setRequestData(req, requestDataList, ocspreq);
 		OCSPCertificate ocspCertificate = OCSPCertificateFactory.getOCSPCertificate();
-		OCSPResp ocspresp = getSignedOcspResponse(ocspreq, ocspCertificate);
+		String queryString = req.getQueryString();
+		boolean isGood = queryString == null || !queryString.contains("RVK");
+		OCSPResp ocspresp = getSignedOcspResponse(ocspreq, ocspCertificate, isGood);
 		setOcspResponse(resp, ocspresp);
 	}
 
@@ -68,7 +72,7 @@ public class ResponderServlet extends MyAbstractServlet {
 	}
 
 
-	private OCSPResp getSignedOcspResponse(OCSPReq ocspreq, OCSPCertificate ocspCertificate) {
+	private OCSPResp getSignedOcspResponse(OCSPReq ocspreq, OCSPCertificate ocspCertificate, boolean isGood) {
 		int responseCode = OCSPRespBuilder.INTERNAL_ERROR;
 		ResponderID respondID = new ResponderID(ocspCertificate.getCertificateChain()[0].getSubject());
 		RespID respID = new RespID(respondID);
@@ -76,9 +80,7 @@ public class ResponderServlet extends MyAbstractServlet {
 		// Date dateRevoke = new Date();
 		// bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new
 		// org.bouncycastle.cert.ocsp.UnknownStatus());
-		bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), CertificateStatus.GOOD);
-		// bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), new
-		// RevokedStatus(dateRevoke,2));
+		bOCSPbuilder.addResponse(ocspreq.getRequestList()[0].getCertID(), getStatus(isGood));
 		Extension ext = ocspreq.getExtension(ID_NONCE);
 		bOCSPbuilder.setResponseExtensions(new Extensions(new Extension[] { ext }));
 		BasicOCSPResp basicResponse = null;
@@ -93,6 +95,17 @@ public class ResponderServlet extends MyAbstractServlet {
 			logger.error(e.getMessage(), e);
 		}
 		return ocspResp;
+	}
+
+
+	private CertificateStatus getStatus(boolean isGood) {
+		if (isGood) {
+			return CertificateStatus.GOOD;
+		} else {
+			Date revocationDate = new Date();
+			revocationDate.setTime(revocationDate.getTime() - TimeUnit.DAYS.toMillis(100));
+			return new RevokedStatus(revocationDate, 2);
+		}
 	}
 
 
